@@ -1,0 +1,21 @@
+# PyTorch with CUDA support
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch
+torchvision
+torchaudio
+
+# Core dependencies
+numpy
+tqdm
+opencv-python
+pandas
+matplotlib
+scipy
+
+
+# Jupyter Environment
+notebook
+ipykernel
+jupyter
+ipywidgets
+jupyterlab-widgets
