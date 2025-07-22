@@ -59,3 +59,6 @@ python Preprocessing.py
 mv /workspace/EgoHAR/Gaze_Data /workspace/
 mv /workspace/EgoHAR/train_split1_filtered.txt /workspace/
 mv /workspace/EgoHAR/test_split1_filtered.txt /workspace/
+mv /workspace/EgoHAR/models.py /workspace/
+mv /workspace/EgoHAR/train.py /workspace/
+mv /workspace/EgoHAR/dataset.py /workspace/
