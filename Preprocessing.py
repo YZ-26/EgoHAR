@@ -124,8 +124,8 @@ def check_frame_mismatch(root_frame_dir, video_map):
 if __name__ == "__main__":
     # Configuration paths
     base_video_dir = "/workspace/data/EGTEA/Trimmed_Action_Clips/cropped_clips"
-    train_split_path = "/workspace/train_split1_filtered.txt"
-    test_split_path = "/workspace/test_split1_filtered.txt"
+    train_split_path = "/workspace/EgoHAR/train_split1_filtered.txt"
+    test_split_path = "/workspace/EgoHAR/test_split1_filtered.txt"
     output_base_dir = "/workspace/Frames"
     
 
