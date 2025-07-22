@@ -12,9 +12,9 @@ rm -rf ~/miniconda3/miniconda.sh
 # Create & activate the Conda environment
 ~/miniconda3/bin/conda create -n egtea-env python==3.11 -y
 source ~/miniconda3/etc/profile.d/conda.sh
+conda activate egtea-env
 conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
 conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
-conda activate egtea-env
 
 # Install core requirements
 pip install -r requirements.txt
