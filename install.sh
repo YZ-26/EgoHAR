@@ -49,8 +49,11 @@ rm -rf /workspace/EGTEA_Gaze_Plus_Downloader
 cd /workspace/EgoHAR
 python preprocess.py
 
-# Move Gaze data to the correct location
+# Move files to the correct location
 mv /workspace/EgoHAR/Gaze_Data /workspace/
+mv /workspace/EgoHAR/train_split1_filtered.txt /workspace/
+mv /workspace/EgoHAR/test_split1_filtered.txt /workspace/
+
 
 
 
