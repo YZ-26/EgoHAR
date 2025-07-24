@@ -6,6 +6,9 @@ from tqdm import tqdm
 from dataset import IGazeDataset
 import os
 from models import FeatureEncoder, TransformerClassifier
+import gc
+
+
 
 def train_model(
     feature_encoder,
@@ -13,8 +16,8 @@ def train_model(
     train_loader=None,
     val_loader=None,
     num_classes=106,
-    num_epochs=10,
-    learning_rate=1e-4,
+    num_epochs=40,
+    learning_rate=1e-3,
     weight_decay=0,
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     checkpoint_dir=None,
@@ -33,7 +36,7 @@ def train_model(
     start_epoch = 0
 
     if checkpoint_load:
-        checkpoint_path = os.path.join(checkpoint_dir, "checkpoint_epoch9.pt")  # Change manually if needed
+        checkpoint_path = os.path.join(checkpoint_dir, "checkpoint_epoch1.pt")  # Change manually if needed
         checkpoint = torch.load(checkpoint_path)
         feature_encoder.load_state_dict(checkpoint['feature_encoder_state_dict'])
         transformer_classifier.load_state_dict(checkpoint['transformer_classifier_state_dict'])
@@ -52,10 +55,13 @@ def train_model(
 
 
     # -------- TRAINING --------
-    print("========== TRAINING STARTED ==========")
     print(f"Resuming from epoch {start_epoch + 1}")
 
     for epoch in range(start_epoch, num_epochs):
+        print()
+        print()
+        print("========== TRAINING STARTED ==========")
+
         feature_encoder.train()
         transformer_classifier.train()
 
@@ -95,7 +101,7 @@ def train_model(
             loss_gaze = criterion_gaze(pred_gaze_log, gaze_gt_soft)
 
             # --- Total loss ---
-            loss = loss_cls + 0.5 * loss_gaze
+            loss = loss_cls + loss_gaze
 
             optimizer.zero_grad()
             loss.backward()
@@ -125,7 +131,10 @@ def train_model(
 
         # -------- VALIDATION --------
 
+        print()
+        print()
         print("========== VALIDATION STARTED ==========")
+        
         feature_encoder.eval()
         transformer_classifier.eval()
 
@@ -150,20 +159,20 @@ def train_model(
                 features = features.reshape(B, T, -1)
                 logits = transformer_classifier(features)
 
-                logits = logits.mean(dim=0, keepdim=True)  # Average over time dimension
+                logits = logits.mean(dim=0)  # Average over time dimension
 
                 # --- Accuracy ---
-                preds = torch.argmax(logits, dim=1)
+                preds = torch.argmax(logits)
                 val_correct += (preds == labels).sum().item()
                 val_samples += labels.size(0)
 
-                loss_cls = criterion_cls(logits, labels)
+                loss_cls = criterion_cls(logits.unsqueeze(0), labels)
                 pred_gaze = attention_maps.view(B, T, 7, 7)
                 pred_gaze_log = F.log_softmax(pred_gaze.view(B, T, -1), dim=-1)
                 gaze_gt_soft = F.softmax(gaze_gt.view(B, T, -1), dim=-1)
                 loss_gaze = criterion_gaze(pred_gaze_log, gaze_gt_soft)
 
-                loss = loss_cls + 0.5 * loss_gaze
+                loss = loss_cls + loss_gaze
 
                 val_loss += loss.item()
                 val_cls_loss += loss_cls.item()
@@ -184,14 +193,18 @@ def train_model(
 
 if __name__ == "__main__":
 
+    # gc.collect()
+    # torch.cuda.empty_cache()
+
+
     datapath = '/workspace'
 
     # Train and validation sets
     train_dataset = IGazeDataset(datapath, 'train', data_split=1)
     val_dataset = IGazeDataset(datapath, 'test', data_split=1)
 
-    train_loader = DataLoader(train_dataset, batch_size=8, pin_memory=True, num_workers=os.cpu_count())
-    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=os.cpu_count())
+    train_loader = DataLoader(train_dataset, batch_size=8, pin_memory=True, num_workers=10)
+    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=10)
 
     feature_encoder = FeatureEncoder()
     transformer_classifier = TransformerClassifier(num_classes=106)
@@ -204,7 +217,7 @@ if __name__ == "__main__":
         num_classes=106,
         num_epochs=10,
         learning_rate=1e-4,
-        weight_decay=0.01,
+        weight_decay=0,
         device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
         checkpoint_dir='/workspace/checkpoints',
         checkpoint_load=False

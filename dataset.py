@@ -113,7 +113,7 @@ class IGazeDataset(Dataset):
                 if T > self.clip_len * 10:
                     jump = T // 10  # sparse sampling
 
-            list_start_idx = list(range(1, T - self.clip_len + 1, jump))
+            list_start_idx = list(range(1, T - self.clip_len + 2, jump))
 
             for offset in list_start_idx:
                 indices = [offset + i for i in range(self.clip_len)]
@@ -130,7 +130,7 @@ class IGazeDataset(Dataset):
                 heatmap = generate_gaussian_heatmap(xy, 7, 7, self.sigma)
                 img_batch.append(imgs)
                 heatmap_batch.append(heatmap)
-                label_batch.append(label)
+            label_batch.append(label)
 
             return torch.stack(img_batch), torch.stack(heatmap_batch), torch.tensor(label_batch)
 

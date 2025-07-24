@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
-import torchvision.models as models
+from torchvision.models import efficientnet_b3, EfficientNet_B3_Weights
+
 
 
 class FeatureEncoder(nn.Module):
@@ -8,8 +9,9 @@ class FeatureEncoder(nn.Module):
         super(FeatureEncoder, self).__init__()
 
         # Load pretrained VGG16 and keep only convolutional layers
-        efficientnet_b3 = models.efficientnet_b3(pretrained=True)
-        self.features = efficientnet_b3.features  # Output shape: (B, 1536, 7, 7) if input is 224x224
+        weights = EfficientNet_B3_Weights.DEFAULT
+        model = efficientnet_b3(weights=weights)
+        self.features = model.features  # Output shape: (B, 1536, 7, 7) if input is 224x224
 
         # Attention prediction layer
         self.attention_conv = nn.Conv2d(in_channels=1536, out_channels=1, kernel_size=1)
@@ -31,7 +33,7 @@ class FeatureEncoder(nn.Module):
         out = features + attended_features
 
         # Reduce channels
-        out = self.channel_reduction(out)  # (B, 6, H', W')
+        # out = self.channel_reduction(out)  # (B, 6, H', W')
 
         return out, attention_map
 
@@ -68,7 +70,7 @@ class PositionalEncoding(nn.Module):
 #         return x
 
 class TransformerEncoderLayer(nn.Module):
-    def __init__(self, embed_dim, num_heads, dense_dim, dropout=0.5):
+    def __init__(self, embed_dim, num_heads, dense_dim, dropout=0.2):
         super(TransformerEncoderLayer, self).__init__()
         self.embed_dim = embed_dim
         self.num_heads = num_heads
@@ -106,7 +108,7 @@ class TransformerEncoderLayer(nn.Module):
 
 
 class TransformerClassifier(nn.Module):
-    def __init__(self, num_classes, embed_dim=294, num_heads=14, hidden_dim=64, num_layers=1): # embed_dim: From EffNet output, 6x7x7
+    def __init__(self, num_classes, embed_dim=75264, num_heads=4, hidden_dim=64, num_layers=1): # embed_dim: From EffNet output, 6x7x7
         super(TransformerClassifier, self).__init__()
         self.pos_encoder = PositionalEncoding(embed_dim)
         self.layers = nn.ModuleList([TransformerEncoderLayer(embed_dim, num_heads, hidden_dim) for _ in range(num_layers)])
