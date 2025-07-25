@@ -7,7 +7,8 @@ from dataset import IGazeDataset
 import os
 from models import FeatureEncoder, TransformerClassifier
 import gc
-
+from torch.utils.data import WeightedRandomSampler
+from collections import Counter
 
 
 def train_model(
@@ -21,10 +22,19 @@ def train_model(
     weight_decay=0,
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     checkpoint_dir=None,
-    checkpoint_load=False
+    checkpoint_load=False,
+    log_file_dir=None 
 ):
+
+    def log(message):
+        print(message)
+        if log_file_dir:
+            with open(os.path.join(log_file_dir, 'outputs.txt'), 'a') as f:
+                f.write(message + '\n')
+
+    os.makedirs(log_file_dir, exist_ok=True)
     os.makedirs(checkpoint_dir, exist_ok=True)
-    print(f"Device: {device}")
+    log(f"Device: {device}")
     feature_encoder = feature_encoder.to(device)
     transformer_classifier = transformer_classifier.to(device)
 
@@ -36,31 +46,29 @@ def train_model(
     start_epoch = 0
 
     if checkpoint_load:
-        checkpoint_path = os.path.join(checkpoint_dir, "checkpoint_epoch1.pt")  # Change manually if needed
+        checkpoint_path = os.path.join(checkpoint_dir, "checkpoint_epoch27.pt")  # Change manually if needed
         checkpoint = torch.load(checkpoint_path)
         feature_encoder.load_state_dict(checkpoint['feature_encoder_state_dict'])
         transformer_classifier.load_state_dict(checkpoint['transformer_classifier_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         start_epoch = checkpoint['epoch']
-        print("Model loaded.")
-
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer,
-        mode='min',
-        factor=0.1,
-        patience=1,
-        threshold=0.2,
-        threshold_mode='abs'
-    )
+        log("Model loaded.")
 
 
     # -------- TRAINING --------
-    print(f"Resuming from epoch {start_epoch + 1}")
+    log(f"Resuming from epoch {start_epoch + 1}")
 
     for epoch in range(start_epoch, num_epochs):
-        print()
-        print()
-        print("========== TRAINING STARTED ==========")
+        log('')
+        log('')
+        log("========== TRAINING STARTED ==========")
+
+        # --- Manual LR decay at epoch 23 and 43 ---
+        if epoch in [6, 14, 24, 34, 44]:
+            for param_group in optimizer.param_groups:
+                param_group['lr'] *= 0.1
+            new_lr = optimizer.param_groups[0]['lr']
+            log(f"[Epoch {epoch+1}] Learning rate manually reduced to {new_lr}")
 
         feature_encoder.train()
         transformer_classifier.train()
@@ -116,7 +124,7 @@ def train_model(
         avg_gaze = total_gaze_loss / len(train_loader)
         train_acc = 100.0 * total_correct / total_samples
 
-        print(f"[Epoch {epoch+1}] Train Loss: {avg_loss:.4f} | Cls: {avg_cls:.4f} | Gaze: {avg_gaze:.4f} | Acc: {train_acc:.2f}%")
+        log(f"[Epoch {epoch+1}] Train Loss: {avg_loss:.4f} | Cls: {avg_cls:.4f} | Gaze: {avg_gaze:.4f} | Acc: {train_acc:.2f}%")
 
         checkpoint_path = os.path.join(checkpoint_dir, f"checkpoint_epoch{epoch+1}.pt")
         torch.save({
@@ -126,14 +134,12 @@ def train_model(
             'optimizer_state_dict': optimizer.state_dict(),
             'train_accuracy': train_acc,
         }, checkpoint_path)
-        print(f"Checkpoint saved to {checkpoint_path}")
+        log(f"Checkpoint saved to {checkpoint_path}")
 
 
         # -------- VALIDATION --------
 
-        print()
-        print()
-        print("========== VALIDATION STARTED ==========")
+        log("========== VALIDATION STARTED ==========")
         
         feature_encoder.eval()
         transformer_classifier.eval()
@@ -182,19 +188,43 @@ def train_model(
         avg_val_cls = val_cls_loss / len(val_loader)
         avg_val_gaze = val_gaze_loss / len(val_loader)
         val_acc = 100.0 * val_correct / val_samples
-        scheduler.step(avg_val_loss)
-        print("Current LR:", scheduler.optimizer.param_groups[0]['lr'])
 
-        print(f"[Epoch {epoch+1}] Val Loss:   {avg_val_loss:.4f} | Cls: {avg_val_cls:.4f} | Gaze: {avg_val_gaze:.4f} | Acc: {val_acc:.2f}%")
+        log(f"[Epoch {epoch+1}] Val Loss:   {avg_val_loss:.4f} | Cls: {avg_val_cls:.4f} | Gaze: {avg_val_gaze:.4f} | Acc: {val_acc:.2f}%")
 
 
-    print("Training complete.")
+    log("Training complete.")
 
+
+def create_weighted_sampler(labels):
+    # Count occurrences of each class
+    class_counts = Counter(labels)
+    num_samples = len(labels)
+
+    # Compute class weights: inverse of frequency
+    class_weights = {cls: 1.0 / count for cls, count in class_counts.items()}
+
+    # Assign a weight to each sample
+    sample_weights = [class_weights[label] for label in labels]
+
+    # Create the sampler
+    sampler = WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=num_samples,
+        replacement=True  # allows re-sampling to balance
+    )
+
+    return sampler
 
 if __name__ == "__main__":
 
     # gc.collect()
     # torch.cuda.empty_cache()
+
+    with open("/workspace/train_split1_filtered.txt", 'r') as f:
+        train_labels = [int(line.strip().split()[1]) - 1 for line in f.readlines()]
+
+    
+    sampler = create_weighted_sampler(train_labels)
 
 
     datapath = '/workspace'
@@ -203,7 +233,7 @@ if __name__ == "__main__":
     train_dataset = IGazeDataset(datapath, 'train', data_split=1)
     val_dataset = IGazeDataset(datapath, 'test', data_split=1)
 
-    train_loader = DataLoader(train_dataset, batch_size=8, pin_memory=True, num_workers=10)
+    train_loader = DataLoader(train_dataset, batch_size=8, pin_memory=True, sampler=sampler, num_workers=10)
     val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=10)
 
     feature_encoder = FeatureEncoder()
@@ -215,10 +245,11 @@ if __name__ == "__main__":
         train_loader=train_loader,
         val_loader=val_loader,
         num_classes=106,
-        num_epochs=10,
-        learning_rate=1e-4,
+        num_epochs=50,
+        learning_rate=1e-3,
         weight_decay=0,
         device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
         checkpoint_dir='/workspace/checkpoints',
-        checkpoint_load=False
+        checkpoint_load=False,
+        log_file_dir='/workspace/logs'
     )

@@ -1,4 +1,3 @@
-
 import os
 import numpy as np
 import torch
@@ -68,21 +67,23 @@ class IGazeDataset(Dataset):
         frame_dir = os.path.join(self.frame_base, cn)
         gaze_path = os.path.join(self.gaze_base, f"{cn}.npy")
 
-        # --- Parse frame range from clip name ---
-        # Assumes cn ends with ...-F<start>-F<end>
+        # Parse frame range
         parts = cn.split('-')
-        fstart = int(parts[-2][1:])  # Remove 'F' and convert to int
+        fstart = int(parts[-2][1:])
         fend   = int(parts[-1][1:])
         T = fend - fstart + 1
 
-        # --- Load gaze data ---
+        # Load gaze data
         gaze_xy = torch.from_numpy(np.load(gaze_path)).float()
 
+        # --- Try to skip 20% on both sides ---
+        tentative_skip = int(T * 0.2)
+        valid_range = T - 2 * tentative_skip
+        skip = tentative_skip if valid_range >= self.clip_len else 0
+
         if self.train_mode:
-
-            max_start = T - self.clip_len + 1
-            offset = np.random.randint(1, max_start + 1)
-
+            max_start = (T - 2 * skip) - self.clip_len + 1
+            offset = np.random.randint(0, max_start) + skip + 1  # +1 for 1-based indexing
             indices = [offset + i for i in range(self.clip_len)]
 
             snippet = []
@@ -90,30 +91,28 @@ class IGazeDataset(Dataset):
                 frame_path = os.path.join(frame_dir, f"frame_{i:05d}.jpg")
                 img = cv2.imread(frame_path)
                 if img is None:
-                  print(f"[Warning] Skipping missing frame: {frame_path}")
-                  continue
+                    print(f"[Warning] Skipping missing frame: {frame_path}")
+                    continue
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                 img = cv2.resize(img, self.img_size)
                 snippet.append(img)
 
             imgs = transform(snippet)
-            xy = gaze_xy[offset - 1 : offset + self.clip_len - 1]
+            xy = gaze_xy[offset - 1: offset + self.clip_len - 1]
             heatmap = generate_gaussian_heatmap(xy, 7, 7, self.sigma)
             return imgs, heatmap, label
-
 
         else:
             img_batch = []
             heatmap_batch = []
             label_batch = []
 
-            jump = self.clip_len  # default jump: clip_len
+            effective_range = T - 2 * skip
+            jump = self.clip_len
+            if self.test_sparse and effective_range > self.clip_len * self.max_test:
+                jump = effective_range // self.max_test
 
-            if self.test_sparse:
-                if T > self.clip_len * 10:
-                    jump = T // 10  # sparse sampling
-
-            list_start_idx = list(range(1, T - self.clip_len + 2, jump))
+            list_start_idx = list(range(skip + 1, skip + 1 + effective_range - self.clip_len + 1, jump))
 
             for offset in list_start_idx:
                 indices = [offset + i for i in range(self.clip_len)]
@@ -126,7 +125,7 @@ class IGazeDataset(Dataset):
                     snippet.append(img)
 
                 imgs = transform(snippet)
-                xy = gaze_xy[offset - 1 : offset + self.clip_len - 1]
+                xy = gaze_xy[offset - 1: offset + self.clip_len - 1]
                 heatmap = generate_gaussian_heatmap(xy, 7, 7, self.sigma)
                 img_batch.append(imgs)
                 heatmap_batch.append(heatmap)

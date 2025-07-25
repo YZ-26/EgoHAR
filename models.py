@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torchvision.models import efficientnet_b3, EfficientNet_B3_Weights
-
+import torch.nn.functional as F
 
 
 class FeatureEncoder(nn.Module):
@@ -16,8 +16,8 @@ class FeatureEncoder(nn.Module):
         # Attention prediction layer
         self.attention_conv = nn.Conv2d(in_channels=1536, out_channels=1, kernel_size=1)
 
-        # Reduce feature channels from 1536 to 7
-        self.channel_reduction = nn.Conv2d(in_channels=1536, out_channels=6, kernel_size=1)
+        # Reduce feature channels from 1536 to 100
+        self.channel_reduction = nn.Conv2d(in_channels=1536, out_channels=100, kernel_size=1)
 
     def forward(self, x):  # x: (B, 3, H, W)
         features = self.features(x)  # (B, 1536, H', W')
@@ -33,7 +33,7 @@ class FeatureEncoder(nn.Module):
         out = features + attended_features
 
         # Reduce channels
-        # out = self.channel_reduction(out)  # (B, 6, H', W')
+        out = self.channel_reduction(out)  # (B, 6, H', W')
 
         return out, attention_map
 
@@ -52,63 +52,63 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:, :x.size(1)]  # (B, T, D)
         return x
 
-# class TransformerEncoderLayer(nn.Module):
-#     def __init__(self, embed_dim, num_heads, hidden_dim, dropout=0.5):
-#         super(TransformerEncoderLayer, self).__init__()
-#         self.attn = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
-#         self.linear1 = nn.Linear(embed_dim, hidden_dim)
-#         self.linear2 = nn.Linear(hidden_dim, embed_dim)
-#         self.norm1 = nn.LayerNorm(embed_dim)
-#         self.norm2 = nn.LayerNorm(embed_dim)
-#         self.dropout = nn.Dropout(dropout)
-
-#     def forward(self, x):
-#         attn_output, _ = self.attn(x, x, x)
-#         x = self.norm1(x + attn_output)
-#         x_ff = self.linear2(F.gelu(self.linear1(x)))
-#         x = self.norm2(x + x_ff)
-#         return x
-
 class TransformerEncoderLayer(nn.Module):
-    def __init__(self, embed_dim, num_heads, dense_dim, dropout=0.2):
+    def __init__(self, embed_dim, num_heads, hidden_dim, dropout=0.5):
         super(TransformerEncoderLayer, self).__init__()
-        self.embed_dim = embed_dim
-        self.num_heads = num_heads
-
-        self.norm_input = nn.LayerNorm(embed_dim)  # LayerNorm before attention
         self.attn = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
+        self.linear1 = nn.Linear(embed_dim, hidden_dim)
+        self.linear2 = nn.Linear(hidden_dim, embed_dim)
+        self.norm1 = nn.LayerNorm(embed_dim)
+        self.norm2 = nn.LayerNorm(embed_dim)
+        self.dropout = nn.Dropout(dropout)
 
-        self.norm_1 = nn.LayerNorm(embed_dim)
-        self.norm_2 = nn.LayerNorm(embed_dim)
-
-        self.ff = nn.Sequential(
-            nn.Linear(embed_dim, dense_dim),
-            nn.GELU(),
-            nn.BatchNorm1d(dense_dim),
-            nn.Dropout(dropout),
-            nn.Linear(dense_dim, embed_dim),
-            nn.BatchNorm1d(embed_dim),
-            nn.Dropout(dropout)
-        )
-
-    def forward(self, x, mask=None):
-        # x: (B, T, D)
-        x = self.norm_input(x)
-
+    def forward(self, x):
         attn_output, _ = self.attn(x, x, x)
+        x = self.norm1(x + attn_output)
+        x_ff = self.linear2(F.gelu(self.linear1(x)))
+        x = self.norm2(x + x_ff)
+        return x
 
-        x = self.norm_1(x + attn_output)
+# class TransformerEncoderLayer(nn.Module):
+#     def __init__(self, embed_dim, num_heads, dense_dim, dropout=0.2):
+#         super(TransformerEncoderLayer, self).__init__()
+#         self.embed_dim = embed_dim
+#         self.num_heads = num_heads
 
-        # Feedforward with BatchNorm1d: need shape (B*T, D)
-        B, T, D = x.shape
-        proj_input = x
-        proj_output = self.ff(x.view(B * T, D)).view(B, T, D)
+#         self.norm_input = nn.LayerNorm(embed_dim)  # LayerNorm before attention
+#         self.attn = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
 
-        return self.norm_2(proj_input + proj_output)
+#         self.norm_1 = nn.LayerNorm(embed_dim)
+#         self.norm_2 = nn.LayerNorm(embed_dim)
+
+#         self.ff = nn.Sequential(
+#             nn.Linear(embed_dim, dense_dim),
+#             nn.GELU(),
+#             nn.BatchNorm1d(dense_dim),
+#             nn.Dropout(dropout),
+#             nn.Linear(dense_dim, embed_dim),
+#             nn.BatchNorm1d(embed_dim),
+#             nn.Dropout(dropout)
+#         )
+
+#     def forward(self, x, mask=None):
+#         # x: (B, T, D)
+#         x = self.norm_input(x)
+
+#         attn_output, _ = self.attn(x, x, x)
+
+#         x = self.norm_1(x + attn_output)
+
+#         # Feedforward with BatchNorm1d: need shape (B*T, D)
+#         B, T, D = x.shape
+#         proj_input = x
+#         proj_output = self.ff(x.view(B * T, D)).view(B, T, D)
+
+#         return self.norm_2(proj_input + proj_output)
 
 
 class TransformerClassifier(nn.Module):
-    def __init__(self, num_classes, embed_dim=75264, num_heads=4, hidden_dim=64, num_layers=1): # embed_dim: From EffNet output, 6x7x7
+    def __init__(self, num_classes, embed_dim=4900, num_heads=4, hidden_dim=500, num_layers=1): # embed_dim: From EffNet output, 6x7x7
         super(TransformerClassifier, self).__init__()
         self.pos_encoder = PositionalEncoding(embed_dim)
         self.layers = nn.ModuleList([TransformerEncoderLayer(embed_dim, num_heads, hidden_dim) for _ in range(num_layers)])
