@@ -17,7 +17,11 @@ class FeatureEncoder(nn.Module):
         self.attention_conv = nn.Conv2d(in_channels=1536, out_channels=1, kernel_size=1)
 
         # Reduce feature channels from 1536 to 100
-        self.channel_reduction = nn.Conv2d(in_channels=1536, out_channels=100, kernel_size=1)
+        self.channel_reduction = nn.Sequential(
+            nn.Conv2d(1536, 100, kernel_size=1),
+            nn.BatchNorm2d(100),
+            nn.ReLU()
+        )
 
     def forward(self, x):  # x: (B, 3, H, W)
         features = self.features(x)  # (B, 1536, H', W')
@@ -108,22 +112,28 @@ class TransformerEncoderLayer(nn.Module):
 
 
 class TransformerClassifier(nn.Module):
-    def __init__(self, num_classes, embed_dim=4900, num_heads=4, hidden_dim=500, num_layers=1): # embed_dim: From EffNet output, 6x7x7
+    def __init__(self, num_classes, input_dim=4900, embed_dim=512, num_heads=4, hidden_dim=100, num_layers=1): # embed_dim: From EffNet output, 6x7x7
         super(TransformerClassifier, self).__init__()
         self.pos_encoder = PositionalEncoding(embed_dim)
         self.layers = nn.ModuleList([TransformerEncoderLayer(embed_dim, num_heads, hidden_dim) for _ in range(num_layers)])
         self.pool = nn.AdaptiveAvgPool1d(1)
         self.classifier = nn.Sequential(
-                          # nn.Linear(embed_dim, 128),
-                          # nn.ReLU(),
+                          nn.Linear(embed_dim, 256),
+                          nn.ReLU(),
                           # nn.Dropout(0.5),
                           # nn.Linear(128, 64),
                           # nn.ReLU(),
                           # nn.Dropout(0.5),
-                          nn.Linear(embed_dim, num_classes)
+                          nn.Linear(256, num_classes)
                       )
+        self.input_proj = nn.Sequential(
+            nn.Linear(input_dim, embed_dim),  # 4900 → 512 or whatever you define
+            nn.ReLU(),
+            nn.Dropout(0.2),
+        )
 
     def forward(self, x):  # x: (B, T, D)
+        x = self.input_proj(x)
         x = self.pos_encoder(x)
         for layer in self.layers:
             x = layer(x)

@@ -76,8 +76,8 @@ class IGazeDataset(Dataset):
         # Load gaze data
         gaze_xy = torch.from_numpy(np.load(gaze_path)).float()
 
-        # --- Try to skip 20% on both sides ---
-        tentative_skip = int(T * 0.2)
+        # --- Try to skip 30% on both sides ---
+        tentative_skip = int(T * 0.3)
         valid_range = T - 2 * tentative_skip
         skip = tentative_skip if valid_range >= self.clip_len else 0
 

@@ -246,7 +246,7 @@ if __name__ == "__main__":
         val_loader=val_loader,
         num_classes=106,
         num_epochs=50,
-        learning_rate=1e-3,
+        learning_rate=1e-4,
         weight_decay=0,
         device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
         checkpoint_dir='/workspace/checkpoints',
