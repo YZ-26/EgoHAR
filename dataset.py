@@ -85,11 +85,16 @@ class IGazeDataset(Dataset):
             max_start = (T - 2 * skip) - self.clip_len + 1
             offset = np.random.randint(0, max_start) + skip + 1  # +1 for 1-based indexing
             indices = [offset + i for i in range(self.clip_len)]
+            prob = np.random.random()
 
             snippet = []
             for i in indices:
                 frame_path = os.path.join(frame_dir, f"frame_{i:05d}.jpg")
                 img = cv2.imread(frame_path)
+
+                if prob < 0.5:
+                    img = img[:, ::-1, :]  # Horizontal flip with 50% probability
+
                 if img is None:
                     print(f"[Warning] Skipping missing frame: {frame_path}")
                     continue

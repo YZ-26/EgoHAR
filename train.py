@@ -233,7 +233,7 @@ if __name__ == "__main__":
     train_dataset = IGazeDataset(datapath, 'train', data_split=1)
     val_dataset = IGazeDataset(datapath, 'test', data_split=1)
 
-    train_loader = DataLoader(train_dataset, batch_size=8, pin_memory=True, sampler=sampler, num_workers=10)
+    train_loader = DataLoader(train_dataset, batch_size=16, pin_memory=True, sampler=sampler, num_workers=10)
     val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=10)
 
     feature_encoder = FeatureEncoder()
