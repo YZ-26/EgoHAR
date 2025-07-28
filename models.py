@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torchvision.models import efficientnet_b3, EfficientNet_B3_Weights
+from torchvision.models import resnet152
 import torch.nn.functional as F
 
 
@@ -9,16 +9,15 @@ class FeatureEncoder(nn.Module):
         super(FeatureEncoder, self).__init__()
 
         # Load pretrained VGG16 and keep only convolutional layers
-        weights = EfficientNet_B3_Weights.DEFAULT
-        model = efficientnet_b3(weights=weights)
-        self.features = model.features  # Output shape: (B, 1536, 7, 7) if input is 224x224
+        model = resnet152(weights='IMAGENET1K_V2')
+        self.features = nn.Sequential(*list(model.children())[:-2])  # Output shape: (B, 2048, 7, 7) if input is 224x224
 
         # Attention prediction layer
-        self.attention_conv = nn.Conv2d(in_channels=1536, out_channels=1, kernel_size=1)
+        self.attention_conv = nn.Conv2d(in_channels=2048, out_channels=1, kernel_size=1)
 
-        # Reduce feature channels from 1536 to 100
+        # Reduce feature channels from 2048 to 100
         self.channel_reduction = nn.Sequential(
-            nn.Conv2d(1536, 100, kernel_size=1),
+            nn.Conv2d(2048, 100, kernel_size=1),
             nn.BatchNorm2d(100),
             nn.ReLU()
         )

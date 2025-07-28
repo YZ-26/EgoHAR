@@ -46,7 +46,7 @@ def train_model(
     start_epoch = 0
 
     if checkpoint_load:
-        checkpoint_path = os.path.join(checkpoint_dir, "checkpoint_epoch27.pt")  # Change manually if needed
+        checkpoint_path = os.path.join(checkpoint_dir, "checkpoint_epoch8.pt")  # Change manually if needed
         checkpoint = torch.load(checkpoint_path)
         feature_encoder.load_state_dict(checkpoint['feature_encoder_state_dict'])
         transformer_classifier.load_state_dict(checkpoint['transformer_classifier_state_dict'])
@@ -233,7 +233,7 @@ if __name__ == "__main__":
     train_dataset = IGazeDataset(datapath, 'train', data_split=1)
     val_dataset = IGazeDataset(datapath, 'test', data_split=1)
 
-    train_loader = DataLoader(train_dataset, batch_size=16, pin_memory=True, sampler=sampler, num_workers=10)
+    train_loader = DataLoader(train_dataset, batch_size=24, pin_memory=True, sampler=sampler, num_workers=10)
     val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=10)
 
     feature_encoder = FeatureEncoder()
@@ -250,6 +250,6 @@ if __name__ == "__main__":
         weight_decay=0,
         device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
         checkpoint_dir='/workspace/checkpoints',
-        checkpoint_load=False,
+        checkpoint_load=True,
         log_file_dir='/workspace/logs'
     )
