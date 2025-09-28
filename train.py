@@ -64,7 +64,7 @@ def train_model(
         log("========== TRAINING STARTED ==========")
 
         # --- Manual LR decay at epoch 23 and 43 ---
-        if epoch in [6, 14, 24, 34, 44]:
+        if epoch in [6, 11, 16, 20, 30, 40]:
             for param_group in optimizer.param_groups:
                 param_group['lr'] *= 0.1
             new_lr = optimizer.param_groups[0]['lr']
@@ -233,8 +233,8 @@ if __name__ == "__main__":
     train_dataset = IGazeDataset(datapath, 'train', data_split=1)
     val_dataset = IGazeDataset(datapath, 'test', data_split=1)
 
-    train_loader = DataLoader(train_dataset, batch_size=24, pin_memory=True, sampler=sampler, num_workers=10)
-    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=10)
+    train_loader = DataLoader(train_dataset, batch_size=8, pin_memory=True, sampler=sampler, num_workers=16)
+    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=16)
 
     feature_encoder = FeatureEncoder()
     transformer_classifier = TransformerClassifier(num_classes=106)
@@ -250,6 +250,6 @@ if __name__ == "__main__":
         weight_decay=0,
         device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
         checkpoint_dir='/workspace/checkpoints',
-        checkpoint_load=True,
+        checkpoint_load=False,
         log_file_dir='/workspace/logs'
     )
