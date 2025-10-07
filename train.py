@@ -42,11 +42,13 @@ def train_model(
     params = list(feature_encoder.parameters()) + list(transformer_classifier.parameters())
     optimizer = torch.optim.Adam(params, lr=learning_rate, weight_decay=weight_decay)
     criterion_cls = nn.CrossEntropyLoss()
+    criterion_verb = nn.CrossEntropyLoss()
+    criterion_noun = nn.CrossEntropyLoss()
     criterion_gaze = nn.KLDivLoss(reduction='batchmean')
     start_epoch = 0
 
     if checkpoint_load:
-        checkpoint_path = os.path.join(checkpoint_dir, "checkpoint_epoch8.pt")  # Change manually if needed
+        checkpoint_path = os.path.join(checkpoint_dir, "checkpoint_epoch3.pt")  # Change manually if needed
         checkpoint = torch.load(checkpoint_path)
         feature_encoder.load_state_dict(checkpoint['feature_encoder_state_dict'])
         transformer_classifier.load_state_dict(checkpoint['transformer_classifier_state_dict'])
@@ -75,27 +77,36 @@ def train_model(
 
         total_loss = 0.0
         total_cls_loss = 0.0
+        total_verb_loss = 0.0
+        total_noun_loss = 0.0
         total_gaze_loss = 0.0
         total_correct = 0
         total_samples = 0
 
         for batch in tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs}"):
-            images,  gaze_gt, labels = batch  # Expect shapes: (B, T, 3, H, W), (B, T, 7, 7), (B,)
+            images,  gaze_gt, labels, labels_verb, labels_noun = batch  # Expect shapes: (B, T, 3, H, W), (B, T, 7, 7), (B,)
 
             B, T, C, H, W = images.shape
             images = images.view(B * T, C, H, W).to(device)
             gaze_gt = gaze_gt.to(device)
             labels = labels.to(device)
+            labels_verb = labels_verb.to(device)
+            labels_verb = labels_verb.unsqueeze(1).repeat(1, T).view(-1)
+            labels_noun = labels_noun.to(device)
+            labels_noun = labels_noun.unsqueeze(1).repeat(1, T).view(-1)
 
             # --- Forward ---
-            features, attention_maps = feature_encoder(images)  # (B*T, 7, 7, 7)
+            features, attention_maps, verb_logits, noun_logits = feature_encoder(images)  # (B*T, 7, 7, 7)
             features = features.reshape(B, T, -1)  # (B, T, 294)
 
             # Class prediction
             logits = transformer_classifier(features)  # (B, num_classes)
 
+
             # --- Classification loss ---
             loss_cls = criterion_cls(logits, labels)
+            loss_verb = criterion_verb(verb_logits, labels_verb)
+            loss_noun = criterion_noun(noun_logits, labels_noun)
 
             # --- Accuracy ---
             preds = torch.argmax(logits, dim=1)
@@ -109,7 +120,7 @@ def train_model(
             loss_gaze = criterion_gaze(pred_gaze_log, gaze_gt_soft)
 
             # --- Total loss ---
-            loss = loss_cls + loss_gaze
+            loss = loss_cls + loss_gaze + loss_verb + loss_noun
 
             optimizer.zero_grad()
             loss.backward()
@@ -117,14 +128,18 @@ def train_model(
 
             total_loss += loss.item()
             total_cls_loss += loss_cls.item()
+            total_verb_loss += loss_verb.item()
+            total_noun_loss += loss_noun.item()
             total_gaze_loss += loss_gaze.item()
 
         avg_loss = total_loss / len(train_loader)
         avg_cls = total_cls_loss / len(train_loader)
+        avg_verb = total_verb_loss / len(train_loader)
+        avg_noun = total_noun_loss / len(train_loader)
         avg_gaze = total_gaze_loss / len(train_loader)
         train_acc = 100.0 * total_correct / total_samples
 
-        log(f"[Epoch {epoch+1}] Train Loss: {avg_loss:.4f} | Cls: {avg_cls:.4f} | Gaze: {avg_gaze:.4f} | Acc: {train_acc:.2f}%")
+        log(f"[Epoch {epoch+1}] Train Loss: {avg_loss:.4f} | Cls: {avg_cls:.4f} | Verb: {avg_verb:.4f} | Noun: {avg_noun:.4f} | Gaze: {avg_gaze:.4f} | Acc: {train_acc:.2f}%")
 
         checkpoint_path = os.path.join(checkpoint_dir, f"checkpoint_epoch{epoch+1}.pt")
         torch.save({
@@ -146,6 +161,8 @@ def train_model(
 
         val_loss = 0.0
         val_cls_loss = 0.0
+        val_verb_loss = 0.0
+        val_noun_loss = 0.0
         val_gaze_loss = 0.0
         val_correct = 0
         val_samples = 0
@@ -155,13 +172,19 @@ def train_model(
                 images = batch[0][0]
                 gaze_gt = batch[1][0]
                 labels = batch[2][0]  # (B, T, 3, H, W), (B, T, 7, 7), (B,)
+                labels_verb = batch[3][0]
+                labels_noun = batch[4][0]
 
                 B, T, C, H, W = images.shape
                 images = images.view(B * T, C, H, W).to(device)
                 gaze_gt = gaze_gt.to(device)
                 labels = labels.to(device)
+                labels_verb = labels_verb.to(device)
+                labels_verb = labels_verb.unsqueeze(1).repeat(1, B * T).view(-1)
+                labels_noun = labels_noun.to(device)
+                labels_noun = labels_noun.unsqueeze(1).repeat(1, B * T).view(-1)
 
-                features, attention_maps = feature_encoder(images)
+                features, attention_maps, logits_verb, logits_noun = feature_encoder(images)
                 features = features.reshape(B, T, -1)
                 logits = transformer_classifier(features)
 
@@ -173,23 +196,29 @@ def train_model(
                 val_samples += labels.size(0)
 
                 loss_cls = criterion_cls(logits.unsqueeze(0), labels)
+                loss_verb = criterion_verb(logits_verb, labels_verb)
+                loss_noun = criterion_noun(logits_noun, labels_noun)
                 pred_gaze = attention_maps.view(B, T, 7, 7)
                 pred_gaze_log = F.log_softmax(pred_gaze.view(B, T, -1), dim=-1)
                 gaze_gt_soft = F.softmax(gaze_gt.view(B, T, -1), dim=-1)
                 loss_gaze = criterion_gaze(pred_gaze_log, gaze_gt_soft)
 
-                loss = loss_cls + loss_gaze
+                loss = loss_cls + loss_gaze + loss_verb + loss_noun
 
                 val_loss += loss.item()
                 val_cls_loss += loss_cls.item()
                 val_gaze_loss += loss_gaze.item()
+                val_verb_loss += loss_verb.item()
+                val_noun_loss += loss_noun.item()
 
         avg_val_loss = val_loss / len(val_loader)
         avg_val_cls = val_cls_loss / len(val_loader)
         avg_val_gaze = val_gaze_loss / len(val_loader)
+        avg_val_verb = val_verb_loss / len(val_loader)
+        avg_val_noun = val_noun_loss / len(val_loader)
         val_acc = 100.0 * val_correct / val_samples
 
-        log(f"[Epoch {epoch+1}] Val Loss:   {avg_val_loss:.4f} | Cls: {avg_val_cls:.4f} | Gaze: {avg_val_gaze:.4f} | Acc: {val_acc:.2f}%")
+        log(f"[Epoch {epoch+1}] Val Loss:   {avg_val_loss:.4f} | Cls: {avg_val_cls:.4f} | Verb: {avg_val_verb:.4f} | Noun: {avg_val_noun:.4f}| Gaze: {avg_val_gaze:.4f} | Acc: {val_acc:.2f}%")
 
 
     log("Training complete.")
@@ -233,8 +262,8 @@ if __name__ == "__main__":
     train_dataset = IGazeDataset(datapath, 'train', data_split=1)
     val_dataset = IGazeDataset(datapath, 'test', data_split=1)
 
-    train_loader = DataLoader(train_dataset, batch_size=8, pin_memory=True, sampler=sampler, num_workers=16)
-    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=16)
+    train_loader = DataLoader(train_dataset, batch_size=8, pin_memory=True, sampler=sampler, num_workers=64)
+    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=64)
 
     feature_encoder = FeatureEncoder()
     transformer_classifier = TransformerClassifier(num_classes=106)
@@ -250,6 +279,6 @@ if __name__ == "__main__":
         weight_decay=0,
         device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
         checkpoint_dir='/workspace/checkpoints',
-        checkpoint_load=False,
+        checkpoint_load=True,
         log_file_dir='/workspace/logs'
     )

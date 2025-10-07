@@ -22,15 +22,29 @@ class FeatureEncoder(nn.Module):
             nn.ReLU()
         )
 
+        self.classification_verb = nn.Sequential(
+            nn.AdaptiveAvgPool2d(output_size=(1, 1)),
+            nn.Flatten(),
+            nn.Linear(2048, 19),
+        )
+
+        self.classification_noun = nn.Sequential(
+            nn.AdaptiveAvgPool2d(output_size=(1, 1)),
+            nn.Flatten(),
+            nn.Linear(2048, 53),
+        )
+
     def forward(self, x):  # x: (B, 3, H, W)
-        features = self.features(x)  # (B, 1536, H', W')
+        features = self.features(x)  # (B, 2048, H', W')
+        verb_logits = self.classification_verb(features)
+        noun_logits = self.classification_noun(features)
 
         # Predict attention map
         attention_map = self.attention_conv(features)  # (B, 1, H', W')
         attention_map = torch.sigmoid(attention_map)  # constrain to [0,1]
 
         # Broadcast attention over channels and apply
-        attended_features = features * attention_map  # (B, 1536, H', W')
+        attended_features = features * attention_map  # (B, 2048, H', W')
 
         # Residual connection
         out = features + attended_features
@@ -38,7 +52,7 @@ class FeatureEncoder(nn.Module):
         # Reduce channels
         out = self.channel_reduction(out)  # (B, 6, H', W')
 
-        return out, attention_map
+        return out, attention_map, verb_logits, noun_logits
 
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=16): # max_len: 16 which is frame sequence length

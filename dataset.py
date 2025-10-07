@@ -52,8 +52,8 @@ class IGazeDataset(Dataset):
         self.entries = []
         with open(split_fn, 'r') as f:
             for line in f:
-                cn, label = line.strip().split()[:2]
-                self.entries.append((cn, int(label) - 1))
+                cn, label, label_verb, label_noun = line.strip().split()[:4]
+                self.entries.append((cn, int(label) - 1, int(label_verb) - 1, int(label_noun) - 1))
 
 
         self.frame_base = os.path.join(root, 'Frames', f"{mode}{data_split}")
@@ -63,7 +63,7 @@ class IGazeDataset(Dataset):
         return len(self.entries)
 
     def __getitem__(self, idx):
-        cn, label = self.entries[idx]
+        cn, label, label_verb, label_noun = self.entries[idx]
         frame_dir = os.path.join(self.frame_base, cn)
         gaze_path = os.path.join(self.gaze_base, f"{cn}.npy")
 
@@ -105,12 +105,14 @@ class IGazeDataset(Dataset):
             imgs = transform(snippet)
             xy = gaze_xy[offset - 1: offset + self.clip_len - 1]
             heatmap = generate_gaussian_heatmap(xy, 7, 7, self.sigma)
-            return imgs, heatmap, label
+            return imgs, heatmap, label, label_verb, label_noun
 
         else:
             img_batch = []
             heatmap_batch = []
             label_batch = []
+            label_verb_batch = []
+            label_noun_batch = []
 
             effective_range = T - 2 * skip
             jump = self.clip_len
@@ -135,6 +137,8 @@ class IGazeDataset(Dataset):
                 img_batch.append(imgs)
                 heatmap_batch.append(heatmap)
             label_batch.append(label)
+            label_verb_batch.append(label_verb)
+            label_noun_batch.append(label_noun)
 
-            return torch.stack(img_batch), torch.stack(heatmap_batch), torch.tensor(label_batch)
+            return torch.stack(img_batch), torch.stack(heatmap_batch), torch.tensor(label_batch), torch.tensor(label_verb_batch), torch.tensor(label_noun_batch)
 
