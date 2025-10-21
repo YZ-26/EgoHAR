@@ -16,7 +16,7 @@ The model jointly learns from visual features and gaze patterns to classify fine
 ├── train.py                    # Training pipeline and logging
 ├── train_split1_filtered.txt   # Train split (filtered EGTEA subset)
 ├── test_split1_filtered.txt    # Test split (filtered EGTEA subset)
-└── Gaze_Data/                       # Gaze data (Frames will be downloaded via install.sh)
+└── Gaze_Data/                  # Gaze data (Frames will be downloaded via install.sh)
 ```
 
 ---
